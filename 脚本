@@ -1,0 +1,135 @@
+-- 每次扣十血赌博脚本
+local function TenHpGamble()
+    --[[
+        WARNING: Heads up! This script has not been verified by ScriptBlox. Use at your own risk!
+    ]]
+    -- Gamble GUI
+    -- Author: You
+    -- Odds: 50% -10 HP | 10% Reverse Time (10s) | 1% Blink+Noclip | 39% common tools
+    -- Notes:
+    -- - Grapple always restores WalkSpeed to 16 and AutoRotate true, even on cancel/death.
+    -- - On death: GUI is removed, noclip ends, history clears. GUI rebuilds on respawn.
+    -- - Only gambles if you're alive.
+
+    local Players = game:GetService("Players")
+    local RunService = game:GetService("RunService")
+    local TweenService = game:GetService("TweenService")
+    local UserInputService = game:GetService("UserInputService")
+
+    local LP = Players.LocalPlayer
+
+    -- STATE -----------------------------------------------------------------------
+    local screen -- ScreenGui (rebuilt on respawn)
+    local frame, result, gambleBtn
+    local noclipConn
+    local posHistory = {}
+    local SAMPLE = 0.1
+    local MAX_TIME = 12
+    local maxSamples = math.floor(MAX_TIME / SAMPLE)
+    local dragging = false
+    local dragInput, dragStart, startPos
+
+    -- UTILS -----------------------------------------------------------------------
+    local function getChar()
+        return LP.Character or LP.CharacterAdded:Wait()
+    end
+    local function getHumPair()
+        local c = getChar()
+        return c:WaitForChild("Humanoid"), c:WaitForChild("HumanoidRootPart")
+    end
+
+    local function bubble(text, color)
+        local c = getChar()
+        local head = c:FindFirstChild("Head") or c:FindFirstChildWhichIsA("BasePart")
+        if not head then return end
+        local bb = Instance.new("BillboardGui")
+        bb.Name = "GambleBubble"
+        bb.Size = UDim2.new(0, 0, 0, 0)
+        bb.StudsOffset = Vector3.new(0, 3, 0)
+        bb.Adornee = head
+        bb.Parent = head
+
+        local tl = Instance.new("TextLabel")
+        tl.Size = UDim2.new(0, 220, 0, 36)
+        tl.BackgroundTransparency = 0.2
+        tl.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+        tl.Text = text
+        tl.Font = Enum.Font.GothamBold
+        tl.TextSize = 16
+        tl.TextColor3 = color or Color3.fromRGB(255,255,255)
+        tl.Parent = bb
+        Instance.new("UICorner", tl).CornerRadius = UDim.new(0, 8)
+
+        task.delay(1.2, function() if bb then bb:Destroy() end end)
+    end
+
+    local function startNoclip()
+        if noclipConn then return end
+        noclipConn = RunService.Stepped:Connect(function()
+            local c = LP.Character
+            if not c then return end
+            for _,v in ipairs(c:GetDescendants()) do
+                if v:IsA("BasePart") then v.CanCollide = false end
+            end
+        end)
+    end
+    local function stopNoclip()
+        if noclipConn then noclipConn:Disconnect(); noclipConn = nil end
+    end
+
+    local function createHandle(color)
+        local p = Instance.new("Part")
+        p.Name = "Handle"
+        p.Size = Vector3.new(1,1,1)
+        p.Color = color or Color3.fromRGB(90,90,90)
+        p.Anchored = false
+        p.CanCollide = false
+        p.Massless = true
+        return p
+    end
+    local function putInBackpack(tool)
+        tool.Parent = LP:WaitForChild("Backpack")
+    end
+
+    -- HISTORY SAMPLING ------------------------------------------------------------
+    local hbConn
+    local function startSampling()
+        if hbConn then hbConn:Disconnect() end
+        posHistory = {}
+        local acc = 0
+        hbConn = RunService.Heartbeat:Connect(function(dt)
+            acc += dt
+            if acc >= SAMPLE then
+                acc -= SAMPLE
+                local hum, hrp = getHumPair()
+                if hum and hum.Health > 0 and hrp then
+                    table.insert(posHistory, hrp.CFrame)
+                    if #posHistory > maxSamples then table.remove(posHistory, 1) end
+                end
+            end
+        end)
+    end
+
+    -- TOOLS -----------------------------------------------------------------------
+    -- Safe Teleport
+    local function makeSafeTeleportTool()
+        local tool = Instance.new("Tool")
+        tool.Name = "Safe Teleport"
+        tool.RequiresHandle = true
+        createHandle(Color3.fromRGB(80, 200, 255)).Parent = tool
+
+        tool.Activated:Connect(function()
+            local hum, hrp = getHumPair()
+            if not hum or hum.Health <= 0 then return end
+
+            local best, bestDist
+            for _, d in ipairs(workspace:GetDescendants()) do
+                if d:IsA("SpawnLocation") then
+                    local dist = (hrp.Position - d.Position).Magnitude
+                    if not best or dist < bestDist then best, bestDist = d, dist end
+                end
+            end
+            local target = best and (best.Position + Vector3.new(0, 5, 0)) or (hrp.Position + Vector3.new(0, 50, 0))
+            hrp.CFrame = CFrame.new(target)
+            bubble("Teleported to safety!", Color3.fromRGB(120,220,255))
+            tool:Destr
